@@ -24,7 +24,7 @@ classifiers = [
 ]
 dynamic = ["version"]
 description = "Inspect metadata of weather/climate datasets"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "cftime",
     "dask[diagnostics]",
