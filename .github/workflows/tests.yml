@@ -30,7 +30,7 @@ jobs:
 
     - name: Linting
       run: |
-        condo run -n test python3 -m pip install tox
+        conda run -n test python3 -m pip install tox
         conda run -n test tox -n lint,types
 
   tests:
@@ -60,7 +60,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        condo run -n test python3 -m pip install tox
+        conda run -n test python3 -m pip install tox
         conda run -n test python3 -m pip install -e .[tests] #--constraint .github/dependabot/constraints.txt
 
     - name: Test with pytest
