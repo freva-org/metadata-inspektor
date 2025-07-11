@@ -1,18 +1,20 @@
 """pytest definitions to run the unittests."""
+
 from __future__ import annotations
+
 import base64
-from functools import partial
 import json
 import os
+import subprocess
+from functools import partial
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Generator
-import subprocess
 
-import pytest
 import mock
 import numpy as np
 import pandas as pd
+import pytest
 import xarray as xr
 
 global_meta_data = """
@@ -223,7 +225,7 @@ def run(command: list[str], **kwargs: Any) -> SubProcess:
     """Patch the subprocess.run command."""
 
     main_command, sub_cmd = command[0:2]
-    if main_command.startswith("slk_helpers"):
+    if "slk_helpers" in main_command:
         suffix = Path(command[-1]).suffix
         if sub_cmd == "metadata":
             if suffix == ".tar":
@@ -271,7 +273,7 @@ def create_data(variable_name: str, size: int) -> xr.Dataset:
     ).set_coords(list(coords.keys()))
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="session", autouse=True)
 def slk_bin() -> Generator[Path, None, None]:
     """Create a mock folder where we can add mock slk binaries."""
     with TemporaryDirectory() as slk_dir:
@@ -282,19 +284,20 @@ def slk_bin() -> Generator[Path, None, None]:
             slk_helpers = Path(slk_dir) / "slk_helpers"
             with module.open("w", encoding="utf-8") as tf:
                 tf.write(
-                    f"#!/bin/bash\n echo os.environ[\\'PATH\\'] = \\'{path}\\'"
+                    f"#!/usr/bin/env bash\n echo os.environ[\\'PATH\\'] = \\'{path}\\'"
                 )
             with slk_path.open("w", encoding="utf-8") as tf:
-                tf.write("#!/bin/bash\n")
+                tf.write("#!/usr/bin/env bash\n")
             with slk_helpers.open("w", encoding="utf-8") as tf:
-                tf.write("#!/bin/bash\n")
+                tf.write("#!/usr/bin/env bash\n")
             for inp_file in (slk_path, slk_helpers, module):
                 inp_file.chmod(0o755)
-            yield module
+            with mock.patch.dict(os.environ, {"PATH": path}, clear=False):
+                yield module
 
 
 @pytest.fixture(scope="function")
-def patch_file(session_path: Path) -> Generator[Path, None, None]:
+def patch_file(session_path: Path, slk_bin: str) -> Generator[Path, None, None]:
     req = {"data": {"attributes": {"session_key": "secret"}}}
     post = partial(RequestMock.post, out=req)
     old_run = subprocess.run
@@ -305,7 +308,7 @@ def patch_file(session_path: Path) -> Generator[Path, None, None]:
         with mock.patch("metadata_inspector._slk.SESSION_PATH", session_path):
             with mock.patch("requests.post", post):
                 with mock.patch("requests.get", RequestMock.get):
-                    with mock.patch("subprocess.run", run):
+                    with mock.patch("metadata_inspector._slk.run", run):
                         yield session_path
                         subprocess.run = old_run
 
@@ -342,9 +345,7 @@ def netcdf_files(data: xr.Dataset) -> Generator[Path, None, None]:
                 / f"precip_{time1}-{time2}.nc"
             )
             out_file.parent.mkdir(exist_ok=True, parents=True)
-            data.sel(time=time).to_netcdf(
-                out_file, mode="w", engine="h5netcdf"
-            )
+            data.sel(time=time).to_netcdf(out_file, mode="w", engine="h5netcdf")
         yield Path(td)
 
 

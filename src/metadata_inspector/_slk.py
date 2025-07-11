@@ -4,20 +4,20 @@ Until we do have access to the rest api we'll have to rely on the command line
 tools.
 """
 
-
 from __future__ import annotations
+
 import base64
-from datetime import datetime, timedelta
-from getpass import getuser
 import json
-from pathlib import Path
 import os
 import shutil
 import warnings
-from subprocess import run, PIPE, SubprocessError
+from datetime import datetime, timedelta
+from getpass import getuser
+from pathlib import Path
+from subprocess import PIPE, SubprocessError, run
 
-from hurry.filesize import alternative, size
 import requests
+from hurry.filesize import alternative, size
 
 SLK_HELPERS_BIN = "/sw/spack-levante/slk_helpers-1.9.3-5hmec4/bin"
 SLK_BIN = "/sw/spack-levante/slk-3.3.91-wuylnb/bin/slk"
@@ -50,16 +50,18 @@ def get_file_size(input_path: str) -> str:
     -------
     str: A string representation of the size of the ojbect
     """
-    command = ["slk_helpers", "size", input_path]
+    env = get_env()
+    helpers_cmd = shutil.which("slk_helpers", path=env["PATH"])
+    command = [helpers_cmd or "slk_helpers", "size", input_path]
     try:
-        res = run(command, env=get_env(), check=True, stdout=PIPE, stderr=PIPE)
+        res = run(command, env=env, check=True, stdout=PIPE, stderr=PIPE)
     except SubprocessError as error:  # pragma: no cover
         warnings.warn(
             f"Error: could not get meta-data: {error}"
         )  # pragma: no cover
         return "unkown"  # pragma: no cover
     try:
-        fsize = int(res.stdout.decode().strip())
+        fsize = int(res.stdout.decode().strip() or "0")
     except TypeError:  # pragma: no cover
         return "unkown"  # pragma: no cover
     return size(fsize, system=alternative)
@@ -78,9 +80,11 @@ def get_slk_metadata(input_path: str) -> dict[str, dict[str, str]]:
     -------
     str: string representation of the metdata
     """
-    command = ["slk_helpers", "metadata", input_path]
+    env = get_env()
+    helpers_cmd = shutil.which("slk_helpers", path=env["PATH"])
+    command = [helpers_cmd or "slk_helpers", "metadata", input_path]
     try:
-        res = run(command, env=get_env(), check=True, stdout=PIPE, stderr=PIPE)
+        res = run(command, env=env, check=True, stdout=PIPE, stderr=PIPE)
     except SubprocessError as error:  # pragma: no cover
         warnings.warn(
             f"Error: could not get meta-data: {error}"
@@ -144,12 +148,8 @@ def _login_via_request(passwd: str) -> None:
     fmt = "%a %b %d %H:%M:%S %Z %Y"
     exp_date = (datetime.now() + timedelta(days=20)).astimezone().strftime(fmt)
     url = "https://archive.dkrz.de/api/v2/authentication"
-    res = requests.post(
-        url, data=json.dumps(data), headers=headers, verify=False
-    )
-    key = (
-        res.json().get("data", {}).get("attributes", {}).get("session_key", "")
-    )
+    res = requests.post(url, data=json.dumps(data), headers=headers, verify=False)
+    key = res.json().get("data", {}).get("attributes", {}).get("session_key", "")
     if key:
         sec = {"user": getuser(), "sessionKey": key, "expireDate": exp_date}
         SESSION_PATH.parent.mkdir(exist_ok=True, parents=True)
@@ -164,9 +164,11 @@ def login() -> None:
     now = datetime.now()
     exp_date = get_expiration_date()
     diff = (exp_date - now).total_seconds()
+    env = get_env()
+    slk_cmd = shutil.which("slk", path=env["PATH"])
     if passwd:
         passwd = base64.b64decode(passwd.encode()).decode()
         _login_via_request(passwd)
     elif diff <= 0:
         print("Your session has expired, login to slk")
-        run(["slk", "login"], shell=False, check=True, env=get_env())
+        run([slk_cmd or "slk", "login"], shell=False, check=True, env=get_env())
