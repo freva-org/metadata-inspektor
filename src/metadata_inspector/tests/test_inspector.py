@@ -1,8 +1,9 @@
 """Tests for the command line interface."""
 
+import sys
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-import sys
+
 import pytest
 
 
@@ -52,14 +53,8 @@ def test_netcdf(netcdf_files: Path, patch_file: Path) -> None:
 
     out, text_io = main([netcdf_files], html=True)
     assert "html" in out
-
-
-def test_grib(grib_file: str, patch_file: Path) -> None:
-    """Test to get the correct engine for .grb files."""
-    from metadata_inspector import _get_xr_engine
-
-    engine = _get_xr_engine(grib_file)
-    assert engine == "cfgrib"
+    out, text_io = main(["README.md", "-v"])
+    assert text_io == sys.stderr
 
 
 def test_login(patch_file: Path) -> None:
@@ -84,33 +79,26 @@ def test_fileiter(netcdf_files: Path, patch_file: Path) -> None:
     assert out == nc_files
 
 
+def test_s3() -> None:
+    """Test s3 data."""
+    from metadata_inspector import main
+
+    out, text_io = main(
+        ["s3://ncar-cesm2-lens/ocn/monthly/cesm2LE-ssp370-smbb-WTT.zarr", "-v"]
+    )
+    assert "WTT" in out
+
+
 def test_hsm_with_key(patch_file: Path) -> None:
     """Test reading metadata from the hsm."""
     from metadata_inspector import main
 
-    out, text_io = main([Path("/arch/foo/bar.tar")])
+    out, text_io = main([Path("/arch/foo/bar.tar"), "-v"])
     assert "orog" in out
 
 
 def test_hsm_without_key(patch_file: Path) -> None:
     from metadata_inspector import main
 
-    out, text_io = main([Path("/arch/foo/bar.nc")])
+    out, text_io = main([Path("/arch/foo/bar.nc"), "-v"])
     assert "ua" in out
-
-
-def test_zarr_http(patch_file: Path, https_server: str) -> None:
-    from metadata_inspector import main
-
-    zarr_url = f"{https_server}precip.zarr"
-    out, text_io = main([zarr_url], html=False)
-    assert "precip" in out
-
-
-def test_netcdf_http(netcdf_http_server: str) -> None:
-    """Test reading NetCDF file over HTTP."""
-    from metadata_inspector import main
-
-    netcdf_url = f"{netcdf_http_server}precip_data.nc"
-    out, text_io = main([netcdf_url], html=False)
-    assert "precip" in out

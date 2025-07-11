@@ -22,29 +22,29 @@ jobs:
 
     - name: Creating conda environment for ${{ matrix.python-version }}
       run: |
-        conda create -n test -y make netcdf4 xarray
+        conda create -n test -y netcdf4 xarray
 
     - name: Install dependencies
       run: |
-        conda run -n test python3 -m pip install -e .[tests]
+        conda run -n test python3 -m pip install tox
 
     - name: Linting
       run: |
-        conda run -n test make lint
+        conda run -n test tox -e lint,types
 
   tests:
+    runs-on: ubuntu-latest
     strategy:
         max-parallel: 10
         matrix:
-          python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
-    runs-on: ${{ matrix.os || 'ubuntu-latest' }}
+          python-version: ["3.11", "3.12", "3.13"]
 
     steps:
     - name: Checkout
       uses: actions/checkout@v3
 
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v3
       with:
         python-version:  ${{ matrix.python-version }}
 
@@ -55,15 +55,15 @@ jobs:
 
     - name: Creating conda environment for ${{ matrix.python-version }}
       run: |
-        conda create -n test -y python=${{matrix.python-version}} netcdf4 zarr make
+        conda create -n test -y python=${{matrix.python-version}} netcdf4 zarr>3
 
     - name: Install dependencies
       run: |
-        conda run -n test python3 -m pip install -e .[tests] #--constraint .github/dependabot/constraints.txt
+        conda run -n test python3 -m pip install tox
 
     - name: Test with pytest
       run: |
-        conda run -n test make test
+        conda run -n test tox -e test
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v1

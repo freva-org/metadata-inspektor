@@ -1,25 +1,21 @@
 """pytest definitions to run the unittests."""
 
 from __future__ import annotations
+
 import base64
-from functools import partial
 import json
 import os
+import subprocess
+from functools import partial
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Generator
-import subprocess
 
-import pytest
 import mock
 import numpy as np
 import pandas as pd
+import pytest
 import xarray as xr
-
-import threading
-import http.server
-import socketserver
-import metadata_inspector._slk  # noqa
 
 global_meta_data = """
 netcdf
@@ -228,24 +224,21 @@ class RequestMock:
 def run(command: list[str], **kwargs: Any) -> SubProcess:
     """Patch the subprocess.run command."""
 
-    main_command = command[0]
-    if main_command == "slk_helpers":
-        sub_cmd = command[1]
+    main_command, sub_cmd = command[0:2]
+    if "slk_helpers" in main_command:
+        suffix = Path(command[-1]).suffix
         if sub_cmd == "metadata":
-            input_path = command[2]
-            if input_path.endswith(".tar"):
-                cmd_output = "document\n"
-                cmd_output += "   Keywords: " + json.dumps(meta_data)
-                cmd_output += "\n   Version: ae7677769b0a757248659ddbbb83f224"
+            if suffix == ".tar":
+                cmd = "document\n"
+                cmd += "   Keywords: " + json.dumps(meta_data)
+                cmd += "\n   Version: ae7677769b0a757248659ddbbb83f224"
             else:
-                cmd_output = global_meta_data
-        elif sub_cmd == "size":
-            cmd_output = "1535041\n"
+                cmd = global_meta_data
         else:
-            cmd_output = ""
-        return SubProcess([cmd_output])
-    else:
-        return SubProcess(command, is_fake=False)
+            cmd = "1535041\n"
+        return SubProcess([cmd])
+
+    return SubProcess(command, is_fake=False)
 
 
 def create_data(variable_name: str, size: int) -> xr.Dataset:
@@ -280,7 +273,7 @@ def create_data(variable_name: str, size: int) -> xr.Dataset:
     ).set_coords(list(coords.keys()))
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="session", autouse=True)
 def slk_bin() -> Generator[Path, None, None]:
     """Create a mock folder where we can add mock slk binaries."""
     with TemporaryDirectory() as slk_dir:
@@ -291,21 +284,24 @@ def slk_bin() -> Generator[Path, None, None]:
             slk_helpers = Path(slk_dir) / "slk_helpers"
             with module.open("w", encoding="utf-8") as tf:
                 tf.write(
-                    f"#!/bin/bash\n echo os.environ[\\'PATH\\'] = \\'{path}\\'"
+                    f"#!/usr/bin/env bash\n echo os.environ[\\'PATH\\'] = \\'{path}\\'"
                 )
             with slk_path.open("w", encoding="utf-8") as tf:
-                tf.write("#!/bin/bash\n")
+                tf.write("#!/usr/bin/env bash\n")
             with slk_helpers.open("w", encoding="utf-8") as tf:
-                tf.write("#!/bin/bash\n")
+                tf.write("#!/usr/bin/env bash\n")
             for inp_file in (slk_path, slk_helpers, module):
                 inp_file.chmod(0o755)
-            yield module
+            with mock.patch.dict(os.environ, {"PATH": path}, clear=False):
+                yield module
 
 
 @pytest.fixture(scope="function")
-def patch_file(session_path: Path) -> Generator[Path, None, None]:
+def patch_file(session_path: Path, slk_bin: str) -> Generator[Path, None, None]:
     req = {"data": {"attributes": {"session_key": "secret"}}}
     post = partial(RequestMock.post, out=req)
+    old_run = subprocess.run
+    subprocess.run = run  # type: ignore
     env = os.environ.copy()
     env["LC_TELEPHONE"] = base64.b64encode("foo".encode()).decode()
     with mock.patch.dict(os.environ, env, clear=True):
@@ -314,6 +310,7 @@ def patch_file(session_path: Path) -> Generator[Path, None, None]:
                 with mock.patch("requests.get", RequestMock.get):
                     with mock.patch("metadata_inspector._slk.run", run):
                         yield session_path
+                        subprocess.run = old_run
 
 
 @pytest.fixture(scope="session")
@@ -355,83 +352,6 @@ def netcdf_files(data: xr.Dataset) -> Generator[Path, None, None]:
 
 
 @pytest.fixture(scope="session")
-def grib_file(data: xr.Dataset) -> Generator[str, None, None]:
-    """Save data with a blob to grb file."""
-    from cfgrib.xarray_to_grib import to_grib  # type: ignore
-
-    grib_keys = {
-        "gridType": "regular_ll",
-        "Ni": data.sizes["x"],
-        "Nj": data.sizes["y"],
-        "latitudeOfFirstGridPointInDegrees": data["y"].values[0],
-        "longitudeOfFirstGridPointInDegrees": data["x"].values[0],
-        "latitudeOfLastGridPointInDegrees": data["y"].values[-1],
-        "longitudeOfLastGridPointInDegrees": data["x"].values[-1],
-        "jScansPositively": 1,
-    }
-    with TemporaryDirectory() as td:
-        out_file = Path(td) / "the_project" / "test1" / "precip" / "precip.grb"
-        out_file.parent.mkdir(exist_ok=True, parents=True)
-        to_grib(data, out_file, grib_keys=grib_keys)
-        yield str(out_file)
-
-
-@pytest.fixture(scope="session")
 def session_path() -> Generator[Path, None, None]:
     with TemporaryDirectory() as temp_dir:
         yield Path(temp_dir) / "slk.json"
-
-
-@pytest.fixture(scope="session")
-def https_server() -> Generator[str, None, None]:
-    temp_dir = TemporaryDirectory()
-    zarr_dir = Path(temp_dir.name) / "zarr_data"
-    zarr_data = zarr_dir / "precip.zarr"
-    coords = {
-        "time": pd.date_range("2020-01-01", periods=10),
-        "lat": np.linspace(-90, 90, 180),
-        "lon": np.linspace(0, 360, 360),
-    }
-    data = np.random.rand(10, 180, 360)
-    dset = xr.Dataset(
-        {"precip": (["time", "lat", "lon"], data)}, coords=coords
-    )
-    dset.to_zarr(zarr_data, mode="w", consolidated=True)
-    os.chdir(temp_dir.name)
-    handler = http.server.SimpleHTTPRequestHandler
-    httpd = socketserver.TCPServer(("localhost", 8000), handler)
-    print("start server")
-    server_thread = threading.Thread(target=httpd.serve_forever)
-    server_thread.daemon = True
-    server_thread.start()
-    yield "http://localhost:8000/zarr_data/"
-    print("shutdown server")
-    httpd.shutdown()
-    temp_dir.cleanup()
-
-
-@pytest.fixture(scope="session")
-def netcdf_http_server() -> Generator[str, None, None]:
-    """Creates and serves NetCDF files over HTTP for testing."""
-    temp_dir = TemporaryDirectory()
-    netcdf_dir = Path(temp_dir.name) / "netcdf_data"
-    netcdf_dir.mkdir(parents=True, exist_ok=True)
-
-    dset = create_data("precip", size=50)
-    netcdf_file = netcdf_dir / "precip_data.nc"
-    dset.to_netcdf(netcdf_file, mode="w", engine="h5netcdf")
-
-    os.chdir(temp_dir.name)
-    handler = http.server.SimpleHTTPRequestHandler
-    httpd = socketserver.TCPServer(("localhost", 8001), handler)
-
-    print("Starting HTTP server for NetCDF files")
-    server_thread = threading.Thread(target=httpd.serve_forever)
-    server_thread.daemon = True
-    server_thread.start()
-
-    yield "http://localhost:8001/netcdf_data/"
-
-    print("Shutting down NetCDF HTTP server")
-    httpd.shutdown()
-    temp_dir.cleanup()

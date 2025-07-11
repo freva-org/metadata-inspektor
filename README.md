@@ -1,7 +1,7 @@
 # metadata-inspektor
 
-[![Pipeline](https://github.com/FREVA-CLINT/metadata-inspektor/actions/workflows/tests.yml/badge.svg)](https://github.com/FREVA-CLINT/metadata-inspektor/actions)
-[![codecov](https://codecov.io/gh/FREVA-CLINT/metadata-inspektor/branch/main/graph/badge.svg)](https://codecov.io/gh/FREVA-CLINT/metadata-inspektor)
+[![Pipeline](https://github.com/freva-org/metadata-inspektor/actions/workflows/tests.yml/badge.svg)](https://github.com/freva-org/metadata-inspektor/actions)
+[![codecov](https://codecov.io/gh/freva-org/metadata-inspektor/branch/main/graph/badge.svg)](https://codecov.io/gh/freva-org/metadata-inspektor)
 [![Conda](https://anaconda.org/conda-forge/metadata-inspector/badges/installer/conda.svg)](https://anaconda.org/conda-forge/metadata-inspector)
 [![PyPI version](https://badge.fury.io/py/metadata-inspector.svg)](https://badge.fury.io/py/metadata-inspector)
 

@@ -1,29 +1,32 @@
 """Metadata inspector."""
 
 from __future__ import annotations
+
 import argparse
+import json
+import logging
+import sys
+import warnings
 from functools import partial
 from pathlib import Path
-import json
-import warnings
-import sys
-from typing import Optional, TextIO, Union
+from typing import Dict, List, Optional, TextIO, Tuple, Union
 
+import numpy as np
+import xarray as xr
 from cftime import num2date
 from dask import array as dask_array
 from hurry.filesize import alternative, size
-import numpy as np
-import xarray as xr
-from urllib.parse import urlparse
-from ._version import __version__
+
 from ._slk import get_slk_metadata, login
-import zarr
+from ._version import __version__
+from .utils import open_mfdataset
+
+Logger = logging.getLogger("metadata-inspector")
+Logger.setLevel(1000)
 
 
 def _summarize_datavar(name: str, var: xr.DataArray, col_width: int) -> str:
-    out = [
-        xr.core.formatting.summarize_variable(name, var.variable, col_width)
-    ]
+    out = [xr.core.formatting.summarize_variable(name, var.variable, col_width)]
     if var.attrs:
         n_spaces = 0
         for k in out[0]:
@@ -39,8 +42,8 @@ def _summarize_datavar(name: str, var: xr.DataArray, col_width: int) -> str:
 
 
 def parse_args(
-    args: Optional[list[str]] = None,
-) -> tuple[list[Union[str, Path]], bool]:
+    args: Optional[List[str]] = None,
+) -> Tuple[List[Union[Path, str]], bool]:
     """Construct command line argument parser."""
 
     argp = argparse.ArgumentParser
@@ -70,13 +73,19 @@ def parse_args(
         action="version",
         version="%(prog)s {version}".format(version=__version__),
     )
+    app.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Turn on debug mode for more information.",
+    )
     parsed_args = app.parse_args(args)
     return parsed_args.input, parsed_args.html
 
 
 def dataset_from_hsm(input_file: str) -> xr.Dataset:
     """Create a dataset view from attributes."""
-    global_attrs: dict[str, dict[str, str]] = get_slk_metadata(input_file)
+    global_attrs: Dict[str, Dict[str, str]] = get_slk_metadata(input_file)
     attrs = json.loads(global_attrs.pop("document", {}).pop("Keywords", "{}"))
     nc_attrs = {}
     for key in ("netcdf", "netcdf_header"):
@@ -85,9 +94,7 @@ def dataset_from_hsm(input_file: str) -> xr.Dataset:
     dset = xr.Dataset({}, attrs=attrs.pop("global", {}) or nc_attrs)
     for dim in attrs.pop("dims", []):
         size = int(attrs[dim].pop("size"))
-        start, end = float(attrs[dim].pop("start")), float(
-            attrs[dim].pop("end")
-        )
+        start, end = float(attrs[dim].pop("start")), float(attrs[dim].pop("end"))
         vec = np.linspace(start, end, size)
         if dim == "time":
             vec = num2date(vec, attrs[dim]["units"], attrs[dim]["calendar"])
@@ -104,12 +111,12 @@ def dataset_from_hsm(input_file: str) -> xr.Dataset:
     return dset
 
 
-def _get_files(input_: list[Union[str, Path]]) -> tuple[list[str], list[str]]:
+def _get_files(input_: list[Union[str, Path]]) -> Tuple[List[str], List[str]]:
     """Get all files from given input"""
 
-    files_fs: list[str] = []
-    files_archive: list[str] = []
-    extensions: tuple[str, ...] = (
+    files_fs: List[str] = []
+    files_archive: List[str] = []
+    extensions: Tuple[str, ...] = (
         ".nc",
         ".nc4",
         ".grb",
@@ -119,18 +126,16 @@ def _get_files(input_: list[Union[str, Path]]) -> tuple[list[str], list[str]]:
         ".h5",
         ".hdf5",
     )
-    for inp_file in input_:
-        schema, _, path = str(inp_file).partition(":")
-        if not path:
-            path = schema
-        inp = Path(path).expanduser().absolute()
-        parsed_url = urlparse(str(inp_file))
-        if parsed_url.scheme in ("http", "https", "s3", "gcs"):
-            files_fs.append(str(inp_file))
+    for inp_file in map(str, input_):
+        schema, _, path = inp_file.rpartition("://")
+        schema = schema or "file"
+        if schema in ["file", "slk", "hsm"]:
+            path = str(Path(path).expanduser().absolute())
+        inp = Path(path)
         if schema in ("hsm", "slk") or inp.parts[1] == "arch":
-            files_archive.append(str(inp))
-        if inp.exists() and inp.suffix in (".zarr",):
-            files_fs.append(str(inp))
+            files_archive.append(path)
+        elif inp.exists() and inp.suffix in (".zarr",):
+            files_fs.append(path)
         elif inp.is_dir() and inp.exists():
             files_fs += [
                 str(inp_file)
@@ -145,55 +150,25 @@ def _get_files(input_: list[Union[str, Path]]) -> tuple[list[str], list[str]]:
                 for inp_file in inp.parent.rglob(inp.name)
                 if inp_file.suffix in extensions
             ]
+        else:
+            files_fs.append(inp_file)
     return sorted(files_fs), sorted(files_archive)
 
 
-def _get_xr_engine(file_path: str) -> Optional[str]:
-    """Get the engine, to open the xarray dataset."""
-    try:
-        _ = zarr.open(file_path, mode="r")
-        return "zarr"
-    except Exception:
-        pass
-    try:
-        with xr.open_dataset(file_path, engine="h5netcdf"):
-            return "h5netcdf"
-    except Exception:
-        pass
-    try:
-        with xr.open_dataset(file_path, engine="cfgrib"):
-            return "cfgrib"
-    except Exception:
-        pass
-    return None
-
-
-def _open_datasets(files_fs: list[str], files_hsm: list[str]) -> xr.Dataset:
-    """Open a dataset with xarray."""
+def _open_datasets(files_fs: List[str], files_hsm: List[str]) -> xr.Dataset:
     dsets: list[xr.Dataset] = []
     if files_fs:
-        for file_fs in files_fs:
-            dsets.append(
-                xr.open_dataset(
-                    file_fs,
-                    decode_cf=False,
-                    use_cftime=False,
-                    chunks="auto",
-                    cache=False,
-                    decode_coords=False,
-                    engine=_get_xr_engine(file_fs),
-                )
-            )
+        dsets.append(open_mfdataset(files_fs))
     if files_hsm:
         login()
         for inp_file in files_hsm:
             dsets.append(dataset_from_hsm(inp_file))
-    return xr.merge(dsets, compat="no_conflicts")
+    return xr.merge(dsets)
 
 
 def main(
-    input_files: list[Union[str, Path]], html: bool = False
-) -> tuple[str, TextIO]:
+    input_files: List[Union[str, Path]], html: bool = False
+) -> Tuple[str, TextIO]:
     """Print the representation of a dataset.
 
     Parameters
@@ -211,6 +186,8 @@ def main(
     try:
         dset = _open_datasets(files_fs, files_hsm)
     except Exception as error:
+
+        Logger.exception(error)
         error_header = (
             "No data found, file(s) might be corrupted. "
             "See err. message below:"
@@ -263,7 +240,7 @@ def main(
     return out_str, sys.stdout
 
 
-def cli(args: Optional[list[str]] = None) -> None:
+def cli(args: Optional[List[str]] = None) -> None:
     """Command line argument inteface."""
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore")
@@ -271,4 +248,5 @@ def cli(args: Optional[list[str]] = None) -> None:
             msg, text_io = main(*parse_args(args))
         except Exception as error:
             msg, text_io = f"Error: {error}", sys.stderr
+            Logger.exception(error)
     print(msg, file=text_io, flush=True)
