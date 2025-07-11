@@ -1,15 +1,21 @@
 """Metadata inspector."""
+
 from __future__ import annotations
+
 import argparse
+import json
+import logging
+import sys
+import warnings
 from functools import partial
 from pathlib import Path
 from typing import Dict, List, Optional, TextIO, Tuple, Union
 
+import numpy as np
+import xarray as xr
 from cftime import num2date
 from dask import array as dask_array
 from hurry.filesize import alternative, size
-import numpy as np
-import xarray as xr
 
 from ._slk import get_slk_metadata, login
 from ._version import __version__
