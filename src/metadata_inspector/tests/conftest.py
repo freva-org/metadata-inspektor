@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import base64
-from functools import partial
 import json
 import os
 import subprocess
@@ -11,9 +10,7 @@ from functools import partial
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Generator
-import subprocess
 
-import pytest
 import mock
 import numpy as np
 import pandas as pd
