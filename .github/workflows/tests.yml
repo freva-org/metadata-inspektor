@@ -26,11 +26,10 @@ jobs:
 
     - name: Install dependencies
       run: |
-        conda run -n test python3 -m pip install -e .[tests]
+        conda run -n test python3 -m pip install tox
 
     - name: Linting
       run: |
-        conda run -n test python3 -m pip install tox
         conda run -n test tox -e lint,types
 
   tests:
@@ -61,7 +60,6 @@ jobs:
     - name: Install dependencies
       run: |
         conda run -n test python3 -m pip install tox
-        conda run -n test python3 -m pip install -e .[tests] #--constraint .github/dependabot/constraints.txt
 
     - name: Test with pytest
       run: |
