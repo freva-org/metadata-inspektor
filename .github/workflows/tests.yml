@@ -31,7 +31,7 @@ jobs:
     - name: Linting
       run: |
         conda run -n test python3 -m pip install tox
-        conda run -n test tox -n lint,types
+        conda run -n test tox -e lint,types
 
   tests:
     runs-on: ubuntu-latest
