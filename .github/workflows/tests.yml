@@ -22,7 +22,7 @@ jobs:
 
     - name: Creating conda environment for ${{ matrix.python-version }}
       run: |
-        conda create -n test -y make netcdf4 xarray
+        conda create -n test -y tox netcdf4 xarray
 
     - name: Install dependencies
       run: |
@@ -30,14 +30,14 @@ jobs:
 
     - name: Linting
       run: |
-        conda run -n test make lint
+        conda run -n tox -n lint,types
 
   tests:
     runs-on: ubuntu-latest
     strategy:
         max-parallel: 10
         matrix:
-          python-version: [3.9, "3.10", "3.11", "3.12", "3.13"]
+          python-version: ["3.10", "3.11", "3.12", "3.13"]
 
     steps:
     - name: Checkout
@@ -55,7 +55,7 @@ jobs:
 
     - name: Creating conda environment for ${{ matrix.python-version }}
       run: |
-        conda create -n test -y python=${{matrix.python-version}} netcdf4 zarr make
+        conda create -n test -y python=${{matrix.python-version}} netcdf4 zarr>3 tox
 
     - name: Install dependencies
       run: |
@@ -63,7 +63,7 @@ jobs:
 
     - name: Test with pytest
       run: |
-        conda run -n test make test
+        conda run -n test tox -e test
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v1

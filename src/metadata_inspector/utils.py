@@ -1,7 +1,7 @@
 """Utilities for opening datasets."""
 
 from pathlib import Path
-from typing import List, Union, cast
+from typing import List, cast
 from urllib.parse import urlparse
 
 import fsspec
