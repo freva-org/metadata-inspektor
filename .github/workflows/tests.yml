@@ -22,7 +22,7 @@ jobs:
 
     - name: Creating conda environment for ${{ matrix.python-version }}
       run: |
-        conda create -n test -y tox netcdf4 xarray
+        conda create -n test -y netcdf4 xarray
 
     - name: Install dependencies
       run: |
@@ -30,7 +30,8 @@ jobs:
 
     - name: Linting
       run: |
-        conda run -n tox -n lint,types
+        condo run -n test python3 -m pip install tox
+        conda run -n test tox -n lint,types
 
   tests:
     runs-on: ubuntu-latest
@@ -55,10 +56,11 @@ jobs:
 
     - name: Creating conda environment for ${{ matrix.python-version }}
       run: |
-        conda create -n test -y python=${{matrix.python-version}} netcdf4 zarr>3 tox
+        conda create -n test -y python=${{matrix.python-version}} netcdf4 zarr>3
 
     - name: Install dependencies
       run: |
+        condo run -n test python3 -m pip install tox
         conda run -n test python3 -m pip install -e .[tests] #--constraint .github/dependabot/constraints.txt
 
     - name: Test with pytest
