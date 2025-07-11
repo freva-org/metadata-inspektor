@@ -93,12 +93,12 @@ def test_hsm_with_key(patch_file: Path) -> None:
     """Test reading metadata from the hsm."""
     from metadata_inspector import main
 
-    out, text_io = main([Path("/arch/foo/bar.tar"), "-v"])
+    out, text_io = main([Path("/arch/foo/bar.tar")])
     assert "orog" in out
 
 
 def test_hsm_without_key(patch_file: Path) -> None:
     from metadata_inspector import main
 
-    out, text_io = main([Path("/arch/foo/bar.nc"), "-v"])
+    out, text_io = main([Path("/arch/foo/bar.nc")])
     assert "ua" in out

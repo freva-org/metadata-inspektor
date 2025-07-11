@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+from functools import partial
 import json
 import os
 import subprocess
@@ -10,7 +11,9 @@ from functools import partial
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Generator
+import subprocess
 
+import pytest
 import mock
 import numpy as np
 import pandas as pd
@@ -345,7 +348,9 @@ def netcdf_files(data: xr.Dataset) -> Generator[Path, None, None]:
                 / f"precip_{time1}-{time2}.nc"
             )
             out_file.parent.mkdir(exist_ok=True, parents=True)
-            data.sel(time=time).to_netcdf(out_file, mode="w", engine="h5netcdf")
+            data.sel(time=time).to_netcdf(
+                out_file, mode="w", engine="h5netcdf"
+            )
         yield Path(td)
 
 
