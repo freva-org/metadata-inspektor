@@ -1,6 +1,6 @@
 cftime==1.6.4.post1
 dask==2024.8.0
-h5netcdf==1.6.3
+h5netcdf==1.6.4
 hurry.filesize==0.9
 netCDF4==1.7.2
 requests==2.32.4
