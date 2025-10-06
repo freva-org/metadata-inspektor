@@ -1,5 +1,5 @@
 cftime==1.6.4.post1
-dask==2024.8.0
+dask==2025.9.1
 h5netcdf==1.6.4
 hurry.filesize==0.9
 netCDF4==1.7.2
